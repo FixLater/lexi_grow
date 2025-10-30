@@ -9,29 +9,29 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final ValueNotifier<bool> _showSearchBar = ValueNotifier(true);
+  double _lastOffset = 0.0;
+  DateTime _lastScrollTime = DateTime.now();
 
-  // 顶部导航配置 - 可以在这里添加或删除
-  final List<String> _tabs = [
-    '首页',
-    '热门',
-    // 可以继续添加更多
-    // '体育',
-    // '游戏',
-  ];
+  final List<String> _tabs = ['首页', '热门'];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(
-      length: _tabs.length,
-      vsync: this,
-    );
+    _tabController = TabController(length: _tabs.length, vsync: this);
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
+  void _onScroll(double offset) {
+    final now = DateTime.now();
+    if (now.difference(_lastScrollTime).inMilliseconds < 100) return; // 节流100ms
+    _lastScrollTime = now;
+
+    if (offset - _lastOffset > 5 && _showSearchBar.value) {
+      _showSearchBar.value = false;
+    } else if (_lastOffset - offset > 5 && !_showSearchBar.value) {
+      _showSearchBar.value = true;
+    }
+    _lastOffset = offset;
   }
 
   @override
@@ -39,67 +39,110 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
-          children: [
-            // 顶部导航栏
-            _buildTopTabBar(),
-            // 内容区域
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: _tabs.map((tab) => _buildTabContent(tab)).toList(),
+        child: NestedScrollView(
+          headerSliverBuilder: (context, _) {
+            return [
+              SliverToBoxAdapter(child: _buildAnimatedSearchBar()),
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _SliverTabBarDelegate(
+                  tabBar: _buildTopTabBar(),
+                ),
               ),
+            ];
+          },
+          body: NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              if (notification is ScrollUpdateNotification &&
+                  notification.metrics.axis == Axis.vertical) {
+                _onScroll(notification.metrics.pixels);
+              }
+              return false;
+            },
+            child: TabBarView(
+              controller: _tabController,
+              children: _tabs.map((tab) => _buildTabContent(tab)).toList(),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ✅ 搜索栏动画（使用 AnimatedSwitcher）
+  Widget _buildAnimatedSearchBar() {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _showSearchBar,
+      builder: (context, show, _) {
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          transitionBuilder: (child, animation) =>
+              SizeTransition(sizeFactor: animation, child: child),
+          child: show
+              ? _buildSearchBar()
+              : const SizedBox.shrink(key: ValueKey('hidden')),
+        );
+      },
+    );
+  }
+
+  /// ✅ 顶部搜索框
+  Widget _buildSearchBar() {
+    return Container(
+      key: const ValueKey('searchBar'),
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: const Row(
+          children: [
+            Icon(Icons.search, color: Colors.grey),
+            SizedBox(width: 8),
+            Text('搜索内容...', style: TextStyle(color: Colors.grey, fontSize: 15)),
           ],
         ),
       ),
     );
   }
 
-  /// 构建顶部 TabBar
-  Widget _buildTopTabBar() {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: Colors.white,
+  /// ✅ 顶部 TabBar
+  TabBar _buildTopTabBar() {
+    return TabBar(
+      controller: _tabController,
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      labelColor: Colors.black,
+      unselectedLabelColor: Colors.grey,
+      dividerColor: Colors.transparent,
+      labelStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      unselectedLabelStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.normal),
+      indicatorColor: Colors.purple,
+      indicatorWeight: 3,
+      indicatorSize: TabBarIndicatorSize.label,
+      indicator: UnderlineTabIndicator(
+        borderSide: BorderSide(
+          color: Colors.purple.shade200,
+          width: 7,
+        ),
+        insets: const EdgeInsets.only(bottom: 15),
       ),
-      child: TabBar(
-        controller: _tabController,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
-        labelColor: Colors.black,
-        unselectedLabelColor: Colors.grey,
-        dividerColor: Colors.transparent,
-        labelStyle: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-        ),
-        unselectedLabelStyle: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.normal,
-        ),
-        indicatorColor: Theme.of(context).primaryColor,
-        indicatorWeight: 3,
-        indicatorSize: TabBarIndicatorSize.label,
-        indicator: UnderlineTabIndicator(
-          borderSide: BorderSide(
-            color: Colors.purple.shade200, // 直接使用淡紫色
-            width: 7,
-          ),
-          insets: const EdgeInsets.only(bottom: 15), // 调整这个值
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-        tabs: _tabs.map((tab) => Tab(text: tab)).toList(),
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+      tabs: _tabs.map((tab) => Tab(text: tab)).toList(),
     );
   }
 
-  /// 构建 Tab 内容
+  /// ✅ Tab 内容
   Widget _buildTabContent(String tabName) {
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), // 上边距改为8
-      itemCount: 20,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      itemCount: 30,
       itemBuilder: (context, index) {
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
@@ -112,17 +155,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 color: Theme.of(context).primaryColor.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(
-                Icons.image,
-                color: Theme.of(context).primaryColor,
-              ),
+              child: Icon(Icons.image, color: Theme.of(context).primaryColor),
             ),
             title: Text(
               '$tabName 内容 ${index + 1}',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             subtitle: const Text(
               '这是一段描述文字，展示列表项的详细信息...',
@@ -130,14 +167,31 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
               overflow: TextOverflow.ellipsis,
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('点击了 $tabName 内容 ${index + 1}')),
-              );
-            },
           ),
         );
       },
     );
   }
+}
+
+/// ✅ 自定义 SliverPersistentHeaderDelegate，使 TabBar 可吸顶
+class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
+  final TabBar tabBar;
+
+  _SliverTabBarDelegate({required this.tabBar});
+
+  @override
+  double get minExtent => tabBar.preferredSize.height;
+
+  @override
+  double get maxExtent => tabBar.preferredSize.height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(color: Colors.white, child: tabBar);
+  }
+
+  @override
+  bool shouldRebuild(covariant _SliverTabBarDelegate oldDelegate) =>
+      oldDelegate.tabBar != tabBar;
 }
