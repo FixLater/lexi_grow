@@ -11,7 +11,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   late TabController _tabController;
   final ValueNotifier<bool> _showSearchBar = ValueNotifier(true);
   double _lastOffset = 0.0;
-  DateTime _lastScrollTime = DateTime.now();
 
   final List<String> _tabs = ['首页', '热门'];
 
@@ -22,46 +21,32 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 
   void _onScroll(double offset) {
-    final now = DateTime.now();
-    if (now.difference(_lastScrollTime).inMilliseconds < 100) return; // 节流100ms
-    _lastScrollTime = now;
-
-    if (offset - _lastOffset > 5 && _showSearchBar.value) {
-      _showSearchBar.value = false;
-    } else if (_lastOffset - offset > 5 && !_showSearchBar.value) {
-      _showSearchBar.value = true;
-    }
+    final delta = offset - _lastOffset;
+    if (delta.abs() < 5) return; // 微小滚动不触发
+    if (delta > 5 && _showSearchBar.value) _showSearchBar.value = false;
+    if (delta < -5 && !_showSearchBar.value) _showSearchBar.value = true;
     _lastOffset = offset;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
-        child: NestedScrollView(
-          headerSliverBuilder: (context, _) {
-            return [
+        child: DefaultTabController(
+          length: _tabs.length,
+          child: NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) => [
+              // 搜索栏
               SliverToBoxAdapter(child: _buildAnimatedSearchBar()),
+              // TabBar 吸顶
               SliverPersistentHeader(
                 pinned: true,
-                delegate: _SliverTabBarDelegate(
-                  tabBar: _buildTopTabBar(),
-                ),
+                delegate: _SliverTabBarDelegate(tabBar: _buildTopTabBar()),
               ),
-            ];
-          },
-          body: NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              if (notification is ScrollUpdateNotification &&
-                  notification.metrics.axis == Axis.vertical) {
-                _onScroll(notification.metrics.pixels);
-              }
-              return false;
-            },
-            child: TabBarView(
+            ],
+            body: TabBarView(
               controller: _tabController,
-              children: _tabs.map((tab) => _buildTabContent(tab)).toList(),
+              children: _tabs.map((tab) => TabContent(tab, onScroll: _onScroll)).toList(),
             ),
           ),
         ),
@@ -69,17 +54,28 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     );
   }
 
-  /// ✅ 搜索栏动画（使用 AnimatedSwitcher）
+  /// 弹性阻尼搜索栏动画
   Widget _buildAnimatedSearchBar() {
     return ValueListenableBuilder<bool>(
       valueListenable: _showSearchBar,
       builder: (context, show, _) {
         return AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          switchInCurve: Curves.easeOut,
-          switchOutCurve: Curves.easeIn,
-          transitionBuilder: (child, animation) =>
-              SizeTransition(sizeFactor: animation, child: child),
+          duration: const Duration(milliseconds: 350),
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final offsetAnimation = Tween<Offset>(
+              begin: const Offset(0, -0.05),
+              end: Offset.zero,
+            ).animate(animation);
+            return SlideTransition(
+              position: offsetAnimation,
+              child: FadeTransition(
+                opacity: animation,
+                child: child,
+              ),
+            );
+          },
           child: show
               ? _buildSearchBar()
               : const SizedBox.shrink(key: ValueKey('hidden')),
@@ -88,7 +84,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     );
   }
 
-  /// ✅ 顶部搜索框
   Widget _buildSearchBar() {
     return Container(
       key: const ValueKey('searchBar'),
@@ -111,7 +106,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     );
   }
 
-  /// ✅ 顶部 TabBar
   TabBar _buildTopTabBar() {
     return TabBar(
       controller: _tabController,
@@ -137,52 +131,74 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       tabs: _tabs.map((tab) => Tab(text: tab)).toList(),
     );
   }
+}
 
-  /// ✅ Tab 内容
-  Widget _buildTabContent(String tabName) {
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      itemCount: 30,
-      itemBuilder: (context, index) {
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: ListTile(
-            contentPadding: const EdgeInsets.all(12),
-            leading: Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(Icons.image, color: Theme.of(context).primaryColor),
-            ),
-            title: Text(
-              '$tabName 内容 ${index + 1}',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            subtitle: const Text(
-              '这是一段描述文字，展示列表项的详细信息...',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: const Icon(Icons.chevron_right),
-          ),
-        );
+/// 高性能 Tab 内容
+class TabContent extends StatefulWidget {
+  final String tabName;
+  final ValueChanged<double>? onScroll;
+  const TabContent(this.tabName, {this.onScroll, super.key});
+
+  @override
+  State<TabContent> createState() => _TabContentState();
+}
+
+class _TabContentState extends State<TabContent> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollUpdateNotification && notification.metrics.axis == Axis.vertical) {
+          widget.onScroll?.call(notification.metrics.pixels);
+        }
+        return false;
       },
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        itemCount: 30,
+        itemBuilder: (context, index) {
+          return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+              contentPadding: const EdgeInsets.all(12),
+              leading: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.image, color: Theme.of(context).primaryColor),
+              ),
+              title: Text(
+                '${widget.tabName} 内容 ${index + 1}',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              subtitle: const Text(
+                '这是一段描述文字，展示列表项的详细信息...',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: const Icon(Icons.chevron_right),
+            ),
+          );
+        },
+      ),
     );
   }
 }
 
-/// ✅ 自定义 SliverPersistentHeaderDelegate，使 TabBar 可吸顶
+/// TabBar吸顶委托
 class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
   final TabBar tabBar;
-
   _SliverTabBarDelegate({required this.tabBar});
 
   @override
   double get minExtent => tabBar.preferredSize.height;
-
   @override
   double get maxExtent => tabBar.preferredSize.height;
 
@@ -192,6 +208,5 @@ class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
   }
 
   @override
-  bool shouldRebuild(covariant _SliverTabBarDelegate oldDelegate) =>
-      oldDelegate.tabBar != tabBar;
+  bool shouldRebuild(covariant _SliverTabBarDelegate oldDelegate) => false;
 }
