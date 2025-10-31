@@ -31,7 +31,7 @@ class _MainNavigationState extends State<MainNavigation> {
   // 导航项配置列表 - 在这里添加或删除导航项
   final List<NavigationItem> _navigationItems = const [
     NavigationItem(
-      page: HomePage(),
+      page: SearchScrollPage(),
       label: '首页',
       icon: Icons.home_outlined,
       activeIcon: Icons.home,
