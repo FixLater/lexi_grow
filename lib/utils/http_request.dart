@@ -40,7 +40,7 @@ class HttpRequest {
       onRequest: (options, handler) async {
         // 请求拦截：添加 token
         final token = await _getToken();
-        if (token!.isNotEmpty) {
+        if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = token;
         }
 
@@ -135,7 +135,7 @@ class HttpRequest {
     // TODO: 从本地存储获取 token
     // 使用 SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
+    return prefs.getString('token') ?? "testapp";
   }
 
   /// 清除认证信息并重定向
