@@ -12,7 +12,7 @@ class _SearchScrollPageState extends State<SearchScrollPage>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final ValueNotifier<bool> _showSearchBar = ValueNotifier(true);
-  double _lastOffset = 0.0;
+  late ScrollController _scrollController;
 
   final List<String> _tabs = ['推荐', '热门', '关注', '最新'];
 
@@ -20,6 +20,7 @@ class _SearchScrollPageState extends State<SearchScrollPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
+    _scrollController = ScrollController();
 
     // 状态栏白色，图标黑色
     SystemChrome.setSystemUIOverlayStyle(
@@ -29,10 +30,34 @@ class _SearchScrollPageState extends State<SearchScrollPage>
         statusBarBrightness: Brightness.light,
       ),
     );
+
+    // 监听滚动位置
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    final double statusBarHeight = MediaQuery.of(context).padding.top;
+    final double searchBarHeight = 56; // 搜索栏完整高度（包括margin）
+    final double threshold = searchBarHeight; // 当滚动超过搜索栏高度时隐藏
+
+    if (_scrollController.hasClients) {
+      final offset = _scrollController.offset;
+
+      // 向下滚动超过阈值，隐藏搜索栏
+      if (offset > threshold && _showSearchBar.value) {
+        _showSearchBar.value = false;
+      }
+      // 向上滚动回到顶部区域，显示搜索栏
+      else if (offset <= threshold && !_showSearchBar.value) {
+        _showSearchBar.value = true;
+      }
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
     _tabController.dispose();
     _showSearchBar.dispose();
     super.dispose();
@@ -60,17 +85,17 @@ class _SearchScrollPageState extends State<SearchScrollPage>
           ),
           child: show
               ? TextField(
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search, color: Colors.black54),
-                    hintText: '搜索内容',
-                    hintStyle: const TextStyle(color: Colors.black38),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 0,
-                    ),
-                  ),
-                )
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search, color: Colors.black54),
+              hintText: '搜索内容',
+              hintStyle: const TextStyle(color: Colors.black38),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 0,
+              ),
+            ),
+          )
               : null,
         );
       },
@@ -78,29 +103,12 @@ class _SearchScrollPageState extends State<SearchScrollPage>
   }
 
   Widget _buildListView(String label) {
-    return NotificationListener<ScrollNotification>(
-      onNotification: (scrollInfo) {
-        if (scrollInfo.metrics.axis == Axis.vertical) {
-          final offset = scrollInfo.metrics.pixels;
-          final diff = offset - _lastOffset;
-
-          if (diff > 5 && _showSearchBar.value) {
-            _showSearchBar.value = false;
-          } else if (diff < -5 && !_showSearchBar.value) {
-            _showSearchBar.value = true;
-          }
-
-          _lastOffset = offset;
-        }
-        return false;
-      },
-      child: ListView.builder(
-        padding: EdgeInsets.zero, // 去掉顶部间隔
-        itemCount: 30,
-        itemBuilder: (_, i) => Container(
-          color: Colors.white,
-          child: ListTile(title: Text('$label Item $i')),
-        ),
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      itemCount: 30,
+      itemBuilder: (_, i) => Container(
+        color: Colors.white,
+        child: ListTile(title: Text('$label Item $i')),
       ),
     );
   }
@@ -108,15 +116,14 @@ class _SearchScrollPageState extends State<SearchScrollPage>
   @override
   Widget build(BuildContext context) {
     final double statusBarHeight = MediaQuery.of(context).padding.top;
-    final double searchBarHeight = 40; // 可根据 _showSearchBar 控制动画
+    final double searchBarHeight = 40;
 
-    // 动态计算 SliverAppBar 展开高度
-    final double expandedHeight = statusBarHeight + searchBarHeight  + 16;
-    // 16 是上下 margin/padding，可以根据需要调整
+    final double expandedHeight = statusBarHeight + searchBarHeight + 16;
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: NestedScrollView(
+        controller: _scrollController,
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverAppBar(
             pinned: true,
